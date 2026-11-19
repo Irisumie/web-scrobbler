@@ -21,6 +21,8 @@ import {
 } from '@/ui/components/icons';
 import { sendBackgroundMessage } from '@/util/communication';
 import savedEdits from '@/core/storage/saved-edits';
+import * as channelArtists from '@/core/storage/youtube-channel-artists';
+import type { SavedEdit } from '@/core/storage/options';
 import Regex, { RegexEditContextMenu } from './regex';
 import { PopupAnchor, Squircle, isIos } from '../components/util';
 import type { Navigator } from '../options/components/navigator';
@@ -49,6 +51,27 @@ export default function Edit(props: { tab: Resource<ManagerTab> }) {
 	const [albumArtist, setAlbumArtist] = createSignal('');
 
 	const [isRegex, setIsRegex] = createSignal(false);
+	const [rememberedSong, setRememberedSong] = createSignal<string | null>(
+		null,
+	);
+	const [saveFailed, setSaveFailed] = createSignal(false);
+	const artistChannel = () => channelArtists.getChannelForSong(clonedSong());
+	const songKey = () =>
+		JSON.stringify([
+			artistChannel()?.id,
+			clonedSong()?.getOriginUrl(),
+			clonedSong()?.parsed.track,
+		]);
+	const rememberChannelArtist = () => rememberedSong() === songKey();
+	const submit = (data: SavedEdit) => {
+		setSaveFailed(false);
+		void saveEdit(
+			props.tab,
+			clonedSong(),
+			data,
+			rememberChannelArtist(),
+		).catch(() => setSaveFailed(true));
+	};
 
 	// manually set popup width property, safari does not play well with dynamic width
 	let nowplaying: HTMLDivElement | undefined;
@@ -109,8 +132,7 @@ export default function Edit(props: { tab: Resource<ManagerTab> }) {
 					</Match>
 					<Match when={!isRegex()}>
 						<EditContextMenu
-							tab={props.tab}
-							clonedSong={clonedSong()}
+							submit={submit}
 							setIsRegex={setIsRegex}
 							track={track}
 							artist={artist}
@@ -166,7 +188,7 @@ export default function Edit(props: { tab: Resource<ManagerTab> }) {
 									event.key === 'Enter' &&
 									!event.isComposing
 								) {
-									saveEdit(props.tab, clonedSong(), {
+									submit({
 										artist: artist(),
 										track: track(),
 										album: album() || null,
@@ -215,6 +237,32 @@ export default function Edit(props: { tab: Resource<ManagerTab> }) {
 									setAlbumArtist(e.currentTarget.value);
 								}}
 							/>
+							<Show when={artistChannel()} keyed>
+								{(channel) => (
+									<label
+										class={styles.rememberArtist}
+										title={channel.label}
+									>
+										<input
+											type="checkbox"
+											checked={rememberChannelArtist()}
+											onChange={(event) =>
+												setRememberedSong(
+													event.currentTarget.checked
+														? songKey()
+														: null,
+												)
+											}
+										/>
+										{t('infoRememberChannelArtist')}
+									</label>
+								)}
+							</Show>
+							<Show when={saveFailed()}>
+								<p role="alert">
+									{t('infoChannelArtistSaveFailed')}
+								</p>
+							</Show>
 							<Show when={!isIos()}>
 								<div class={styles.controlButtons}>
 									<button
@@ -226,7 +274,7 @@ export default function Edit(props: { tab: Resource<ManagerTab> }) {
 												: t('infoSubmitTitle')
 										}
 										onClick={() => {
-											saveEdit(props.tab, clonedSong(), {
+											submit({
 												artist: artist(),
 												track: track(),
 												album: album() || null,
@@ -246,7 +294,7 @@ export default function Edit(props: { tab: Resource<ManagerTab> }) {
 												: t('infoSwapTitle')
 										}
 										onClick={() => {
-											saveEdit(props.tab, clonedSong(), {
+											submit({
 												artist: track(),
 												track: artist(),
 												album: album() || null,
@@ -259,7 +307,7 @@ export default function Edit(props: { tab: Resource<ManagerTab> }) {
 												return;
 											}
 											event.stopImmediatePropagation();
-											saveEdit(props.tab, clonedSong(), {
+											submit({
 												artist: track(),
 												track: artist(),
 												album: album() || null,
@@ -295,8 +343,7 @@ export default function Edit(props: { tab: Resource<ManagerTab> }) {
 }
 
 function EditContextMenu(props: {
-	tab: Resource<ManagerTab>;
-	clonedSong: ClonedSong | undefined;
+	submit: (data: SavedEdit) => void;
 	setIsRegex: Setter<boolean>;
 	track: Accessor<string>;
 	artist: Accessor<string>;
@@ -313,7 +360,7 @@ function EditContextMenu(props: {
 						: 'infoSubmitTitleShort',
 				icon: CheckOutlined,
 				action: () =>
-					void saveEdit(props.tab, props.clonedSong, {
+					props.submit({
 						artist: props.artist(),
 						track: props.track(),
 						album: props.album() || null,
@@ -327,7 +374,7 @@ function EditContextMenu(props: {
 						: 'infoSwapTitleShort',
 				icon: PublishedWithChangesOutlined,
 				action: () =>
-					void saveEdit(props.tab, props.clonedSong, {
+					props.submit({
 						artist: props.track(),
 						track: props.artist(),
 						album: props.album() || null,
@@ -357,23 +404,27 @@ function EditContextMenu(props: {
  * @param tab - tab data of the tab whose data is being edited
  * @param clonedSong - cloned song from the tab
  * @param data - the new song data to edit to
+ * @param rememberArtist - Whether to reuse the artist on this channel
  */
 async function saveEdit(
 	tab: Resource<ManagerTab>,
 	clonedSong: ClonedSong | undefined,
-	data: {
-		artist: string;
-		track: string;
-		album: string | null;
-		albumArtist: string | null;
-	},
+	data: SavedEdit,
+	rememberArtist: boolean,
 ) {
 	if (!clonedSong) {
 		return;
 	}
 	await savedEdits.saveSongInfo(clonedSong, data);
-	sendBackgroundMessage(tab()?.tabId ?? -1, {
-		type: 'reprocessSong',
-		payload: undefined,
-	});
+	try {
+		const channel = channelArtists.getChannelForSong(clonedSong);
+		if (rememberArtist && channel && data.artist?.trim()) {
+			await channelArtists.save(channel, data.artist);
+		}
+	} finally {
+		void sendBackgroundMessage(tab()?.tabId ?? -1, {
+			type: 'reprocessSong',
+			payload: undefined,
+		});
+	}
 }

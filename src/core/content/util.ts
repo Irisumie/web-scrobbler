@@ -59,7 +59,7 @@ export const ARTIST_SEPARATOR = ', ';
  * Default array of separators used to split artist and track info.
  * Push new separators in the implementation if required.
  */
-export const defaultSeparators = [
+export const defaultSeparators: Separator[] = [
 	' -- ',
 	'--',
 	' ~ ',
@@ -792,13 +792,237 @@ export const ytTitleRegExps = [
 ];
 
 /**
+ * Markers indicating the text around them names the original artist or the
+ * cover singer rather than the track title.
+ */
+const ytCoverMarkerRegExp =
+	/\bcovers?\b|\bcovered\b|カバー|歌ってみた|唄ってみた|うたってみた|弾いてみた/i;
+const ytQuotedCoverRegExp =
+	/^[『｢「](.+?)[」｣』]\s*(?:[-–—]+\s*)?cover(?:ed)?\s+by\s+(.+)$/i;
+const ytTrackArtistSlashRegExp = /／|\s+\/\/?\s+/;
+const ytTitleCreditSeparators = new RegExp(
+	`${ytTrackArtistSlashRegExp.source}|\\s+[-–—]+\\s*|[-–—]+\\s+`,
+	'g',
+);
+const ytTitlePrefixTagRegExp = /^((\[[^\]]+\])|(【[^】]+】))\s*-*\s*/i;
+const ytMusicVideoTagRegExp =
+	/[(［【][^(［【]*?((Music Video)|(MV)|(PV)).*?[】］)]/i;
+
+/**
+ * Points at which a Japanese-style video title can be split, matched by
+ * position rather than by list order so that a separator inside a name (the
+ * hyphen in `r-906`) cannot win over the real one.
+ *
+ * A halfwidth slash only counts when surrounded by whitespace, otherwise
+ * names such as `AC/DC` would split. The fullwidth slash needs no such guard
+ * - it is not used inside names.
+ *
+ * `slash` and `cover` split points always mean "曲名 <split> 歌い手".
+ * `other` ones are ambiguous and handled separately.
+ */
+const ytSplitPoints: { pattern: RegExp; kind: 'slash' | 'cover' | 'other' }[] =
+	[
+		{ pattern: ytTrackArtistSlashRegExp, kind: 'slash' },
+		{ pattern: /\s+--?\s+/, kind: 'other' },
+		{ pattern: /\s+[–—]\s+/, kind: 'other' },
+		{ pattern: /\s+~\s+/, kind: 'other' },
+		{ pattern: /[:|]/, kind: 'other' },
+		{ pattern: ytCoverMarkerRegExp, kind: 'cover' },
+	];
+
+/** Hiragana, katakana and CJK ideographs. */
+const japaneseCharRegExp = /[぀-ヿ一-鿿]/;
+const romanizationRegExp = /^[A-Za-z0-9\s'’\-.,&!?]+$/;
+
+/**
+ * Remove the tag groups Japanese uploaders bracket their titles with, e.g.
+ * `【歌ってみた】` or `【健屋花那/にじさんじ】`. They carry no track info and
+ * their contents would otherwise be mistaken for a separator.
+ *
+ * @param title - Video title
+ * @returns Title without bracketed tag groups
+ */
+function stripYtBracketTags(title: string): string {
+	return title.replace(/[【［][^】］]*[】］]/g, '').trim();
+}
+
+/**
+ * Find the leftmost point the title can be split at.
+ *
+ * @param title - Video title, stripped of bracketed tags
+ * @returns Split point, or null if the title has none
+ */
+function findYtSplitPoint(
+	title: string,
+): { index: number; length: number; kind: 'slash' | 'cover' | 'other' } | null {
+	let found = null;
+
+	for (const { pattern, kind } of ytSplitPoints) {
+		const match = pattern.exec(title);
+		if (!match) {
+			continue;
+		}
+
+		// Leftmost wins; on a tie the longer match wins, so ' - ' beats ':'.
+		if (
+			found === null ||
+			match.index < found.index ||
+			(match.index === found.index && match[0].length > found.length)
+		) {
+			found = { index: match.index, length: match[0].length, kind };
+		}
+	}
+
+	return found;
+}
+
+/**
+ * Remove a romanized duplicate of the track title, which Japanese uploaders
+ * commonly append: `ラヴィ(Lavie)` or `合わない / imanishi - Awanai`.
+ *
+ * Only applied when what remains is actually Japanese, so Latin titles and
+ * `(feat. ...)` credits are left alone.
+ *
+ * @param track - Track title
+ * @returns Track title without its romanized duplicate
+ */
+function stripYtRomanization(track: string): string {
+	const afterSlash = /^(.*?)\s*[/／]\s*([^/／]+)$/.exec(track);
+	if (
+		afterSlash &&
+		romanizationRegExp.test(afterSlash[2]) &&
+		japaneseCharRegExp.test(afterSlash[1])
+	) {
+		return afterSlash[1].trim();
+	}
+
+	const inParens = /^(.*?)\s*[(（]([^()（）]*)[)）]\s*$/.exec(track);
+	if (
+		inParens &&
+		romanizationRegExp.test(inParens[2]) &&
+		!/feat/i.test(inParens[2]) &&
+		japaneseCharRegExp.test(inParens[1])
+	) {
+		return inParens[1].trim();
+	}
+
+	return track;
+}
+
+/**
+ * Parse a video title using the Japanese "曲名 / 歌い手" convention, which is
+ * the reverse of the "Artist - Track" convention {@link splitArtistTrack}
+ * assumes.
+ *
+ * Where the title does name the track first, the artist is returned empty:
+ * depending on the video the trailing part names the original artist, the
+ * vocal synth or the cover singer, so it is dropped and the connector is left
+ * to fall back to the channel name.
+ *
+ * @param title - Video title, already stripped of decorations
+ * @returns Artist and track, or null if the title is not Japanese-style
+ */
+function parseJapaneseStyleYtTitle(title: string): ArtistTrackInfo | null {
+	const cleanedTitle = stripYtBracketTags(title);
+	if (!cleanedTitle) {
+		return null;
+	}
+
+	const splitPoint = findYtSplitPoint(cleanedTitle);
+
+	// Nothing to split on - the whole title is the track.
+	if (splitPoint === null) {
+		const track = stripYtRomanization(cleanedTitle);
+		/*
+		 * Compared against the original title: if stripping tags or a
+		 * romanization changed anything then this is a Japanese-style title
+		 * and the channel name should supply the artist. If nothing changed,
+		 * defer to the default handling.
+		 */
+		return track === title ? null : { artist: null, track };
+	}
+
+	const head = cleanedTitle.substring(0, splitPoint.index).trim();
+	const tail = cleanedTitle
+		.substring(splitPoint.index + splitPoint.length)
+		.trim();
+
+	/*
+	 * A dash or colon is far more often "Artist - Track", so those are only
+	 * reversed when the trailing part is explicitly marked as a cover.
+	 */
+	if (splitPoint.kind === 'other' && !ytCoverMarkerRegExp.test(tail)) {
+		return head && tail
+			? { artist: head, track: stripYtRomanization(tail) }
+			: null;
+	}
+
+	return head ? { artist: null, track: stripYtRomanization(head) } : null;
+}
+
+/**
+ * Split a song title followed by a separator and a credit that matches the channel artist.
+ * @param videoTitle - Title supplied by YouTube or YouTube Music
+ * @param channelArtist - Artist name derived from the channel name
+ * @returns Track and artist when the channel name confirms the trailing credit
+ */
+export function parseYtTitleWithTrailingArtist(
+	videoTitle: string,
+	channelArtist: string,
+): { artist: string; track: string } | null {
+	const title = videoTitle
+		.replace(ytTitlePrefixTagRegExp, '')
+		.replace(ytMusicVideoTagRegExp, '');
+	const channel = channelArtist.normalize('NFKC').toLowerCase();
+	// Dashes need whitespace on at least one side so names like r-906 stay intact.
+	for (const { 0: separator, index } of title.matchAll(
+		ytTitleCreditSeparators,
+	)) {
+		const head = title.slice(0, index).trim();
+		const tail = title.slice(index + separator.length).trim();
+		if (head.normalize('NFKC').toLowerCase() === channel) {
+			return null;
+		}
+		if (head && tail && tail.normalize('NFKC').toLowerCase() === channel) {
+			return { track: head, artist: tail };
+		}
+	}
+	return null;
+}
+
+/**
  * Extract artist and track from Youtube video title.
  * @param videoTitle - Youtube video title
+ * @param useJapaneseTitleOrder - Parse titles as "曲名 / 歌い手" where they
+ * follow that convention, instead of assuming "Artist - Track" throughout
+ * @param channelArtist - Channel artist name used to confirm a trailing credit
  * @returns Object containing artist and track fields
  */
 export function processYtVideoTitle(
 	videoTitle: string | null | undefined,
+	useJapaneseTitleOrder = false,
+	channelArtist?: string | null,
 ): ArtistTrackInfo {
+	const { artist, track } = getYtVideoTitleDetails(
+		videoTitle,
+		useJapaneseTitleOrder,
+		channelArtist,
+	);
+	return { artist, track };
+}
+
+/**
+ * Parse a YouTube title and identify explicit artist credits for the watch connector.
+ * @param videoTitle - Original video title
+ * @param useJapaneseTitleOrder - Enable the Japanese title-order heuristics
+ * @param channelArtist - Channel artist name used to confirm a trailing credit
+ * @returns Parsed title and whether the artist was explicitly credited
+ */
+export function getYtVideoTitleDetails(
+	videoTitle: string | null | undefined,
+	useJapaneseTitleOrder = false,
+	channelArtist?: string | null,
+): ArtistTrackInfo & Pick<State, 'artistIsCredited'> {
 	let artist = null;
 	let track = null;
 
@@ -807,7 +1031,7 @@ export function processYtVideoTitle(
 	}
 
 	// Remove [genre] or 【genre】 from the beginning of the title
-	let title = videoTitle.replace(/^((\[[^\]]+\])|(【[^】]+】))\s*-*\s*/i, '');
+	let title = videoTitle.replace(ytTitlePrefixTagRegExp, '');
 
 	// Remove track (CD and vinyl) numbers from the beginning of the title
 	title = title.replace(/^\s*([a-zA-Z]{1,2}|[0-9]{1,2})[1-9]?\.\s+/i, '');
@@ -816,10 +1040,7 @@ export function processYtVideoTitle(
 	title = title.replace(/-\s*([「【『])/, '$1');
 
 	// 【/(*Music Video/MV/PV*】/)
-	title = title.replace(
-		/[(［【][^(［【]*?((Music Video)|(MV)|(PV)).*?[】］)]/i,
-		'',
-	);
+	title = title.replace(ytMusicVideoTagRegExp, '');
 
 	// 【/(東方/オリジナル*】/)
 	title = title.replace(/[(［【]((オリジナル)|(東方)).*?[】］)]+?/, '');
@@ -830,18 +1051,52 @@ export function processYtVideoTitle(
 	// MV/PV if ending and with whitespace in front
 	title = title.replace(/\s+(MV|PV)$/i, '');
 
+	const quotedCover = ytQuotedCoverRegExp.exec(title.trim());
+	if (quotedCover) {
+		const [song] = quotedCover[1].split(ytTrackArtistSlashRegExp, 1);
+		if (song.trim()) {
+			return {
+				artist: quotedCover[2],
+				track: song.trim(),
+				artistIsCredited: true,
+			};
+		}
+	}
+
 	// Try to match one of the regexps
 	for (const regExp of ytTitleRegExps) {
 		const artistTrack = regExp.pattern.exec(title);
 		if (artistTrack) {
 			artist = artistTrack[regExp.groups.artist];
 			track = artistTrack[regExp.groups.track];
+			if (!isArtistTrackEmpty({ artist, track })) {
+				return { artist, track, artistIsCredited: true };
+			}
 			break;
 		}
 	}
 
 	// No match? Try splitting, then.
 	if (isArtistTrackEmpty({ artist, track })) {
+		const trailingArtist = channelArtist
+			? parseYtTitleWithTrailingArtist(title, channelArtist)
+			: null;
+		if (trailingArtist) {
+			return { ...trailingArtist, artistIsCredited: true };
+		}
+
+		const japaneseStyle = useJapaneseTitleOrder
+			? parseJapaneseStyleYtTitle(title)
+			: null;
+		if (japaneseStyle !== null) {
+			/*
+			 * Artist may be empty on purpose - the connector then fills it in
+			 * from the channel name, which names the uploader rather than
+			 * whoever the trailing part of the title happens to refer to.
+			 */
+			return japaneseStyle;
+		}
+
 		({ artist, track } = splitArtistTrack(title));
 	}
 

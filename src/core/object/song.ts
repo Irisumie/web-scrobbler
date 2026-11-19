@@ -1,4 +1,5 @@
 import type { ConnectorMeta } from '@/core/connectors';
+import type { ChannelInfo } from '@/core/content/util';
 import type { State } from '@/core/types';
 import type { DisallowedReason } from './disallowed-reason';
 
@@ -11,6 +12,7 @@ export interface ProcessedSongData {
 }
 
 export interface ParsedSongData extends ProcessedSongData {
+	artistIsCredited?: boolean | null;
 	trackArt?: string | null;
 	uniqueID?: string | null;
 	originUrl?: string | null;
@@ -45,6 +47,8 @@ export type Metadata =
 	| {
 			label: string;
 			startTimestamp: number;
+			artistChannel?: ChannelInfo;
+			channelArtistApplied?: true;
 
 			albumMbId?: string;
 			albumUrl?: string;

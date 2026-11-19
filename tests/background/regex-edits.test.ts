@@ -60,6 +60,90 @@ describe('Should edit Regex', () => {
 		]);
 	});
 
+	it('Should replace an edit in storage', async () => {
+		await regexEdits.saveRegexEdit({
+			search: epRemover.search,
+			replace: epRemover.replace,
+		});
+		await regexEdits.saveRegexEdit({
+			search: singleRemover.search,
+			replace: singleRemover.replace,
+		});
+		await regexEdits.updateRegexEdit(1, {
+			search: fuminnikkiFixer.search,
+			replace: fuminnikkiFixer.replace,
+		});
+		expect(await regexEdits.getData()).to.deep.equal([
+			epRemover,
+			fuminnikkiFixer,
+		]);
+	});
+
+	it('Should ignore a replace at an index that does not exist', async () => {
+		await regexEdits.saveRegexEdit({
+			search: epRemover.search,
+			replace: epRemover.replace,
+		});
+		await regexEdits.updateRegexEdit(5, {
+			search: fuminnikkiFixer.search,
+			replace: fuminnikkiFixer.replace,
+		});
+		expect(await regexEdits.getData()).to.deep.equal([epRemover]);
+	});
+
+	it('Should move an edit later in storage', async () => {
+		await regexEdits.saveRegexEdit({
+			search: epRemover.search,
+			replace: epRemover.replace,
+		});
+		await regexEdits.saveRegexEdit({
+			search: singleRemover.search,
+			replace: singleRemover.replace,
+		});
+		await regexEdits.saveRegexEdit({
+			search: fuminnikkiFixer.search,
+			replace: fuminnikkiFixer.replace,
+		});
+		await regexEdits.moveRegexEdit(0, 2);
+		expect(await regexEdits.getData()).to.deep.equal([
+			singleRemover,
+			fuminnikkiFixer,
+			epRemover,
+		]);
+	});
+
+	it('Should move an edit earlier in storage', async () => {
+		await regexEdits.saveRegexEdit({
+			search: epRemover.search,
+			replace: epRemover.replace,
+		});
+		await regexEdits.saveRegexEdit({
+			search: singleRemover.search,
+			replace: singleRemover.replace,
+		});
+		await regexEdits.moveRegexEdit(1, 0);
+		expect(await regexEdits.getData()).to.deep.equal([
+			singleRemover,
+			epRemover,
+		]);
+	});
+
+	it('Should clamp an out of range move to the end of the list', async () => {
+		await regexEdits.saveRegexEdit({
+			search: epRemover.search,
+			replace: epRemover.replace,
+		});
+		await regexEdits.saveRegexEdit({
+			search: singleRemover.search,
+			replace: singleRemover.replace,
+		});
+		await regexEdits.moveRegexEdit(0, 99);
+		expect(await regexEdits.getData()).to.deep.equal([
+			singleRemover,
+			epRemover,
+		]);
+	});
+
 	it("Should apply edit to song's artist", async () => {
 		await regexEdits.saveRegexEdit({
 			search: fuminnikkiFixer.search,
@@ -112,6 +196,23 @@ describe('Should edit Regex', () => {
 		expect(song.getArtist()).to.equal('フミンニッキ2');
 		expect(song.getAlbum()).to.equal(null);
 		expect(song.getAlbumArtist()).to.equal(null);
+	});
+
+	it('Should let a moved edit take over precedence', async () => {
+		await regexEdits.saveRegexEdit({
+			search: artistNumberSuffixer(1).search,
+			replace: artistNumberSuffixer(1).replace,
+		});
+		await regexEdits.saveRegexEdit({
+			search: artistNumberSuffixer(2).search,
+			replace: artistNumberSuffixer(2).replace,
+		});
+		// The last edit wins, so moving it first hands precedence to the other.
+		await regexEdits.moveRegexEdit(1, 0);
+
+		const song = new Song(correctFuminnikkiSong, youtubeConnector);
+		await pipeline.process(song, youtubeConnector);
+		expect(song.getArtist()).to.equal('フミンニッキ1');
 	});
 
 	it('Should apply edit to track that does not exist', async () => {

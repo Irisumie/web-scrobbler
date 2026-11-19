@@ -9,6 +9,22 @@ type K = typeof REGEX_EDITS;
 type V = DataModels[K];
 type T = Record<K, V>;
 
+/**
+ * An edit may come from a SolidJS store, which is a proxy. Firefox cannot
+ * store those, so everything is copied into plain objects before it is
+ * written. Removing this will break Firefox support.
+ *
+ * @param edit - Edit to copy
+ * @returns The same edit as plain objects
+ */
+function plainRegexEdit(edit: RegexEdit): RegexEdit {
+	return {
+		...edit,
+		search: { ...edit.search },
+		replace: { ...edit.replace },
+	};
+}
+
 export default abstract class RegexEditsModel extends CustomStorage<K> {
 	public abstract getRegexEditStorage(): Promise<RegexEdit[] | null>;
 	public abstract saveRegexEditToStorage(data: T[K]): Promise<void>;
@@ -36,30 +52,58 @@ export default abstract class RegexEditsModel extends CustomStorage<K> {
 	/**
 	 * Save custom regex edit to the storage.
 	 *
-	 * @param search - Search to save
-	 * @param replace - Replace to save
+	 * @param newEdit - Edit to append
 	 */
 	async saveRegexEdit(newEdit: RegexEdit): Promise<void> {
-		/**
-		 * The edit here might be from a solidjs store, which is a proxy.
-		 * Firefox does not like this, so we ensure an explicit shallow copy to regular objects.
-		 * It looks odd, but removing this will break firefox support.
-		 */
-		newEdit.search = {
-			...newEdit.search,
-		};
-		newEdit.replace = {
-			...newEdit.replace,
-		};
 		const storageData = await this.getRegexEditStorage();
-		if (storageData === null) {
-			await this.saveRegexEditToStorage([newEdit]);
+		await this.saveRegexEditToStorage([
+			...(storageData ?? []),
+			plainRegexEdit(newEdit),
+		]);
+	}
+
+	/**
+	 * Replace the edit at the given position.
+	 *
+	 * @param index - Position of the edit to replace
+	 * @param newEdit - Edit to store in its place
+	 */
+	async updateRegexEdit(index: number, newEdit: RegexEdit): Promise<void> {
+		const storageData = await this.getRegexEditStorage();
+		if (storageData === null || !(index in storageData)) {
 			return;
 		}
 
-		const newStorageData = [...storageData, newEdit];
+		storageData[index] = plainRegexEdit(newEdit);
 
-		await this.saveRegexEditToStorage(newStorageData);
+		await this.saveRegexEditToStorage(storageData);
+	}
+
+	/**
+	 * Move an edit to another position.
+	 *
+	 * Order is meaningful: {@link loadSongInfo} walks the list backwards and
+	 * only the first edit to touch a field wins, so edits further down take
+	 * precedence.
+	 *
+	 * @param from - Position of the edit to move
+	 * @param to - Position to move it to, clamped to the list
+	 */
+	async moveRegexEdit(from: number, to: number): Promise<void> {
+		const storageData = await this.getRegexEditStorage();
+		if (storageData === null || !(from in storageData)) {
+			return;
+		}
+
+		const target = Math.min(Math.max(to, 0), storageData.length - 1);
+		if (target === from) {
+			return;
+		}
+
+		const [moved] = storageData.splice(from, 1);
+		storageData.splice(target, 0, moved);
+
+		await this.saveRegexEditToStorage(storageData);
 	}
 
 	async deleteRegexEdit(index: number): Promise<void> {

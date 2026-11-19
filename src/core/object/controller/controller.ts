@@ -878,6 +878,20 @@ export default class Controller {
 		this.currentSong.parsed.scrobblingDisallowedReason =
 			scrobblingDisallowedReason;
 
+		if (
+			newState.artistIsCredited &&
+			!this.currentSong.parsed.artistIsCredited
+		) {
+			this.currentSong.parsed.artistIsCredited = true;
+			if (
+				this.currentSong.flags.finishedProcessing &&
+				needsArtistCreditRefresh(this.currentSong)
+			) {
+				this.reprocessSong();
+				return;
+			}
+		}
+
 		if (this.isNeedToUpdateDuration(newState) && duration) {
 			this.updateSongDuration(duration);
 		}
@@ -913,7 +927,8 @@ export default class Controller {
 	 * Process song using pipeline module.
 	 */
 	private async processSong(): Promise<void> {
-		if (!assertSongNotNull(this.currentSong)) {
+		const song = this.currentSong;
+		if (!assertSongNotNull(song)) {
 			return;
 		}
 		this.shouldHaveScrobbled = false;
@@ -925,12 +940,24 @@ export default class Controller {
 			this.setMode(ControllerMode.Disallowed);
 		}
 
+		if (this.connector.getArtistChannel) {
+			const channel = await this.connector.getArtistChannel(
+				song.getOriginUrl(),
+			);
+			if (channel) {
+				song.metadata.artistChannel = channel;
+			}
+		}
+
 		if (
-			!(await this.pipeline.process(
-				this.currentSong,
-				this.connector.meta,
-			))
+			this.currentSong !== song ||
+			!(await this.pipeline.process(song, this.connector.meta)) ||
+			this.currentSong !== song
 		) {
+			return;
+		}
+		if (needsArtistCreditRefresh(song)) {
+			this.reprocessSong();
 			return;
 		}
 
@@ -1038,6 +1065,13 @@ export default class Controller {
 	 */
 	private isSongChanged(newState: State): boolean {
 		if (!assertSongNotNull(this.currentSong)) {
+			return true;
+		}
+		if (
+			this.connector.getArtistChannel &&
+			newState.originUrl &&
+			newState.originUrl !== this.currentSong.getOriginUrl()
+		) {
 			return true;
 		}
 
@@ -1358,6 +1392,14 @@ export default class Controller {
  */
 function isStateEmpty(state: State) {
 	return !(state.artist && state.track) && !state.uniqueID && !state.duration;
+}
+
+function needsArtistCreditRefresh(song: Song): boolean {
+	return Boolean(
+		song.parsed.artistIsCredited &&
+			song.metadata.channelArtistApplied &&
+			!song.flags.isScrobbled,
+	);
 }
 
 /**

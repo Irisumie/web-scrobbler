@@ -119,6 +119,13 @@ a {
 			border-radius: 3px;
 			padding: 0.15em 0.25em;
 		}
+
+		.rememberArtist {
+			align-items: center;
+			display: flex;
+			gap: 0.35em;
+			white-space: normal;
+		}
 	}
 
 	.playDetails {

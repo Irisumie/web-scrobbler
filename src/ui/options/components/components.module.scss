@@ -610,6 +610,91 @@ summary {
 	}
 }
 
+.regexRowButtons {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25em;
+	margin-right: 0.5em;
+}
+
+.regexArrowUp {
+	transform: rotate(180deg);
+}
+
+.regexEditForm {
+	align-items: center;
+	background-color: var(--last-fm-bg-weak);
+	border: var(--interactable-border);
+	border-radius: 0.5em;
+	display: grid;
+	gap: 0.5em;
+	grid-template-columns: auto 1fr 1fr 1fr 1fr;
+	margin: 0.75em 0 1.5em;
+	padding: 0.75em 1em;
+	width: 100%;
+
+	input {
+		min-width: 0;
+		width: 100%;
+	}
+
+	output {
+		overflow-wrap: anywhere;
+	}
+}
+
+/* The header row sits above the inputs, so it skips the label column. */
+.regexEditFormHeader:first-of-type {
+	grid-column-start: 2;
+}
+
+.regexEditFormLabel {
+	grid-column-start: 1;
+	white-space: nowrap;
+}
+
+.regexEditFormSample {
+	align-items: center;
+	display: flex;
+	gap: 0.25em;
+}
+
+.regexTestSuccess {
+	color: var(--success-color, #4caf50);
+	flex-shrink: 0;
+}
+
+.regexTestFailure {
+	color: var(--error-color, #f44336);
+	flex-shrink: 0;
+}
+
+.regexEditFormFooter {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1em;
+	grid-column: 1 / -1;
+	justify-content: space-between;
+}
+
+.regexEditFormFlags {
+	display: flex;
+	gap: 0.5em;
+}
+
+.regexEditFormFlag {
+	align-items: center;
+	cursor: pointer;
+	display: flex;
+	gap: 0.25em;
+}
+
+.regexEditFormButtons {
+	display: flex;
+	gap: 0.5em;
+}
+
 .scrobble {
 	align-items: center;
 	background-color: var(--last-fm-bg-weak);

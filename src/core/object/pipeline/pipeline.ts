@@ -6,6 +6,7 @@ import * as Copy from '@/core/object/pipeline/copy';
 import * as Metadata from '@/core/object/pipeline/metadata';
 import * as Normalize from '@/core/object/pipeline/normalize';
 import * as RegexEdits from '@/core/object/pipeline/regex-edits';
+import * as YouTubeChannelArtist from '@/core/object/pipeline/youtube-channel-artist';
 import * as CoverArtArchive from '@/core/object/pipeline/coverartarchive/coverartarchive';
 import * as BlockedTags from '@/core/object/pipeline/blocked-tags';
 import type Song from '@/core/object/song';
@@ -18,6 +19,7 @@ export default class Pipeline {
 		Normalize,
 		UserInput,
 		RegexEdits,
+		YouTubeChannelArtist,
 		Metadata,
 		RegexEdits, // Run regex edits again, as the regex edit might have caused an album to be found.
 		BlockedTags,

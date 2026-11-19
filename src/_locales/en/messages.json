@@ -159,6 +159,14 @@
         "message": "Ignore videos that are not in Entertainment category",
         "description": "Option title"
     },
+    "optionYtJapaneseTitleOrder": {
+        "message": "Read titles as \"Track / Artist\"",
+        "description": "Option label"
+    },
+    "optionYtJapaneseTitleOrderTitle": {
+        "message": "For titles written as \"曲名 / 歌い手\", and for covers, take the track name from before the separator and the artist from the channel name. Titles written as \"Artist - Track\" are unaffected.",
+        "description": "Option title"
+    },
     "optionYtGetTrackInfoFromYtMusic": {
         "message": "Use Youtube Music to get track info",
         "description": "Option label"
@@ -331,6 +339,15 @@
         "message": "Edits",
         "description": "'Edits' section"
     },
+    "optionsYouTubeChannelArtists": {
+        "message": "YouTube channel artists"
+    },
+    "optionsYouTubeChannelArtistsDesc": {
+        "message": "To set or change a default artist, edit a video from that channel and select Remember artist for this channel."
+    },
+    "optionsChannelArtistRemoveFailed": {
+        "message": "Could not remove the channel artist."
+    },
     "optionsEditedTracks": {
         "message": "Edited tracks",
         "description": "'Edited tracks' header"
@@ -354,6 +371,42 @@
     "optionsRegexEditsPopupTitle": {
         "message": "$1 regex/bulk edits",
         "description": "'Regex/Bulk edits' header"
+    },
+    "optionsRegexEditsAdd": {
+        "message": "Add rule",
+        "description": "Label of button that adds a regex edit"
+    },
+    "optionsRegexEditsEditRule": {
+        "message": "Edit rule",
+        "description": "Title of button that edits a regex edit"
+    },
+    "optionsRegexEditsSaveRule": {
+        "message": "Save rule",
+        "description": "Label of button that saves a regex edit"
+    },
+    "optionsRegexEditsCancel": {
+        "message": "Cancel",
+        "description": "Label of button that discards regex edit changes"
+    },
+    "optionsRegexEditsMoveUp": {
+        "message": "Move up",
+        "description": "Title of button that moves a regex edit up"
+    },
+    "optionsRegexEditsMoveDown": {
+        "message": "Move down",
+        "description": "Title of button that moves a regex edit down"
+    },
+    "optionsRegexEditsEmpty": {
+        "message": "No rules yet.",
+        "description": "Shown when there are no regex edits"
+    },
+    "optionsRegexEditsTest": {
+        "message": "Test input",
+        "description": "Label of regex edit test input"
+    },
+    "optionsRegexEditsPriorityNote": {
+        "message": "Rules further down take precedence.",
+        "description": "Explains that regex edit order is meaningful"
     },
     "optionsBlockedTags": {
         "message": "Blocked tags",
@@ -902,6 +955,12 @@
     "infoArtistPlaceholder": {
         "message": "Artist",
         "description": "Placeholder of artist input"
+    },
+    "infoRememberChannelArtist": {
+        "message": "Remember artist for this channel"
+    },
+    "infoChannelArtistSaveFailed": {
+        "message": "Could not save the edit or channel artist."
     },
     "infoTrackPlaceholder": {
         "message": "Track",

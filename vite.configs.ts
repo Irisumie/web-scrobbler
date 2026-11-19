@@ -73,7 +73,16 @@ export const buildContent: UserConfig = {
 		lib: {
 			entry: resolvePath(root, 'core', 'content', 'main.ts'),
 			name: manifests.common.name,
-			formats: ['es'],
+			/*
+			 * The content script is injected as a classic script, so top-level
+			 * declarations would land in the global lexical environment and
+			 * shadow the globals set up for connectors - `class MetadataFilter`
+			 * shadowing `window.MetadataFilter` being the notable one. An IIFE
+			 * keeps them function-scoped. Minification hid this in production
+			 * builds by renaming the class, but unminified dev builds broke
+			 * every connector using `MetadataFilter.*`.
+			 */
+			formats: ['iife'],
 		},
 		sourcemap: !isProd(),
 		rollupOptions: {

@@ -4,6 +4,7 @@ import RegexEdits from './regex-edits';
 import { t } from '@/util/i18n';
 import type { ModalType } from '../modal-type';
 import BlockedTagsElement from './blocked-tags';
+import YouTubeChannelArtists from './youtube-channel-artists';
 
 export default function EditOptions(props: {
 	setActiveModal: Setter<ModalType>;
@@ -20,6 +21,7 @@ export default function EditOptions(props: {
 				setActiveModal={props.setActiveModal}
 				modal={props.modal}
 			/>
+			<YouTubeChannelArtists />
 			<BlockedTagsElement
 				setActiveModal={props.setActiveModal}
 				modal={props.modal}

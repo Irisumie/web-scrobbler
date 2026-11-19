@@ -1,6 +1,10 @@
-import type { ArtistTrackInfo, TrackInfoWithAlbum } from '@/core/types';
+import type { BaseState, TrackInfoWithAlbum } from '@/core/types';
+import { isYouTubeChannelId } from '@/util/youtube-channel-id';
 
 export {};
+
+type YouTubeTrackInfo = TrackInfoWithAlbum &
+	Pick<BaseState, 'artistIsCredited'>;
 
 /**
  * Quick links to debug and test the connector:
@@ -63,24 +67,30 @@ let scrobbleMusicRecognisedOnly = false;
  */
 let getTrackInfoFromYtMusicEnabled = false;
 
+/**
+ * Whether titles should be parsed as "曲名 / 歌い手" where they follow that
+ * convention, with the artist taken from the channel name.
+ */
+let useJapaneseTitleOrder = false;
+
 let currentVideoDescription: string | null = null;
-let artistTrackFromDescription: TrackInfoWithAlbum | null = null;
+let artistTrackFromDescription: YouTubeTrackInfo | null = null;
+let playerAuthor: {
+	videoId: string;
+	author: string;
+	channelId: string | null;
+} | null = null;
 
 const getTrackInfoFromYoutubeMusicCache: {
 	[videoId: string]: {
 		done?: boolean;
 		recognisedByYtMusic?: boolean;
 		videoId?: string | null;
-		currentTrackInfo?: { artist?: string; track?: string };
+		currentTrackInfo?: YouTubeTrackInfo;
 	};
 } = {};
 
-const trackInfoGetters: (() =>
-	| ArtistTrackInfo
-	| null
-	| undefined
-	| Record<string, never>
-	| TrackInfoWithAlbum)[] = [
+const trackInfoGetters: (() => YouTubeTrackInfo | null | undefined)[] = [
 	getTrackInfoFromChapters,
 	getTrackInfoFromYoutubeMusic,
 	getTrackInfoFromDescription,
@@ -120,8 +130,52 @@ Connector.channelLabelSelector = [
 	'.slim-owner-icon-and-title .yt-core-attributed-string',
 ];
 
+Connector.getArtistChannel = async (originUrl) => {
+	const videoId = Util.getYtVideoIdFromUrl(originUrl ?? null);
+	// The first read can precede injection or the player's response for this video.
+	for (let attempt = 0; videoId && videoId === getVideoId(); attempt++) {
+		if (playerAuthor?.videoId === videoId && playerAuthor.channelId) {
+			return { id: playerAuthor.channelId, label: playerAuthor.author };
+		}
+		if (attempt === 8) {
+			break;
+		}
+		requestPlayerAuthorFromPage();
+		await new Promise((resolve) => setTimeout(resolve, 100));
+	}
+	return null;
+};
+
+Connector.onScriptEvent = (event) => {
+	if (event.source !== window || event.origin !== location.origin) {
+		return;
+	}
+
+	const { type, videoId, author, channelId } = event.data;
+	if (
+		type !== 'YOUTUBE_PLAYER_AUTHOR' ||
+		typeof videoId !== 'string' ||
+		videoId !== getVideoId() ||
+		typeof author !== 'string' ||
+		!author.trim()
+	) {
+		return;
+	}
+
+	const id = isYouTubeChannelId(channelId) ? channelId : null;
+	if (
+		playerAuthor?.videoId === videoId &&
+		playerAuthor.author === author &&
+		playerAuthor.channelId === id
+	) {
+		return;
+	}
+	playerAuthor = { videoId, author, channelId: id };
+	Connector.onStateChanged();
+};
+
 Connector.getTrackInfo = () => {
-	const trackInfo: TrackInfoWithAlbum = {};
+	const trackInfo: YouTubeTrackInfo = {};
 
 	if (getTrackInfoFromYtMusicEnabled) {
 		const videoId = getVideoId();
@@ -142,6 +196,9 @@ Connector.getTrackInfo = () => {
 
 		if (!trackInfo.artist) {
 			trackInfo.artist = currentTrackInfo.artist;
+			if (trackInfo.artist && currentTrackInfo.artistIsCredited) {
+				trackInfo.artistIsCredited = true;
+			}
 		}
 
 		if (!trackInfo.track) {
@@ -229,9 +286,9 @@ Connector.scrobblingDisallowedReason = () => {
 };
 
 Connector.applyFilter(
-	MetadataFilter.createYouTubeFilter().append({
+	MetadataFilter.createFilter({
 		artist: [removeLtrRtlChars, removeNumericPrefix],
-		track: [removeLtrRtlChars, removeNumericPrefix],
+		track: [filterYouTubeTrack, removeLtrRtlChars, removeNumericPrefix],
 	}),
 );
 
@@ -381,6 +438,11 @@ async function readConnectorOptions() {
 		getTrackInfoFromYtMusicEnabled = true;
 		Util.debugLog('Get track info from YouTube Music enabled');
 	}
+
+	if (await Util.getOption('YouTube', 'japaneseTitleOrder')) {
+		useJapaneseTitleOrder = true;
+		Util.debugLog('Parsing titles in the Japanese "曲名 / 歌い手" order');
+	}
 }
 
 function getVideoDescription() {
@@ -394,15 +456,15 @@ function getTrackInfoFromDescription() {
 	}
 
 	currentVideoDescription = description;
-	artistTrackFromDescription = Util.parseYtVideoDescription(description);
+	const info = Util.parseYtVideoDescription(description);
+	artistTrackFromDescription = info?.artist
+		? { ...info, artistIsCredited: true }
+		: info;
 
 	return artistTrackFromDescription;
 }
 
-function getTrackInfoFromYoutubeMusic():
-	| ArtistTrackInfo
-	| Record<string, never>
-	| undefined {
+function getTrackInfoFromYoutubeMusic(): YouTubeTrackInfo | undefined {
 	// if neither getTrackInfoFromYtMusicEnabled nor scrobbleMusicRecognisedOnly
 	// are enabled, there is no need to run this getter
 	if (!getTrackInfoFromYtMusicEnabled && !scrobbleMusicRecognisedOnly) {
@@ -427,8 +489,20 @@ function getTrackInfoFromYoutubeMusic():
 
 		if (getTrackInfoFromYoutubeMusicCache[videoId ?? ''].done) {
 			// already ran!
-			return getTrackInfoFromYoutubeMusicCache[videoId ?? '']
-				.currentTrackInfo;
+			const info =
+				getTrackInfoFromYoutubeMusicCache[videoId ?? '']
+					.currentTrackInfo;
+			const channelName = getChannelName(false);
+			// OMV responses can use the uploader for the artist field.
+			if (
+				info?.artist &&
+				channelName &&
+				cleanChannelArtist(info.artist) !==
+					cleanChannelArtist(channelName)
+			) {
+				return { ...info, artistIsCredited: true };
+			}
+			return info;
 		}
 		// still running, lets be patient
 		return {};
@@ -442,6 +516,13 @@ function getTrackInfoFromYoutubeMusic():
 				// using firefox
 				clientName: 'WEB_REMIX',
 				clientVersion: '1.20221212.01.00',
+				/*
+				 * Without these the API answers in its default locale, which
+				 * hands back romanized or English titles for Japanese tracks
+				 * (`ど～ぱみん` -> `Dopam!ne`).
+				 */
+				hl: 'ja',
+				gl: 'JP',
 			},
 		},
 		captionParams: {},
@@ -474,13 +555,22 @@ function getTrackInfoFromYoutubeMusic():
 				videoInfo.videoDetails?.musicVideoType ===
 				'MUSIC_VIDEO_TYPE_OMV'
 			) {
+				const { author, title } = videoInfo.videoDetails;
+				const trailingCredit =
+					typeof author === 'string' && typeof title === 'string'
+						? Util.parseYtTitleWithTrailingArtist(
+								title,
+								cleanChannelArtist(author),
+							)
+						: null;
 				getTrackInfoFromYoutubeMusicCache[
 					videoId ?? ''
-				].currentTrackInfo = {
-					artist: videoInfo.videoDetails.author,
-
-					track: videoInfo.videoDetails.title,
-				};
+				].currentTrackInfo = trailingCredit
+					? { ...trailingCredit, artistIsCredited: true }
+					: {
+							artist: author,
+							track: title,
+						};
 			}
 		})
 		.catch((err) => {
@@ -505,22 +595,150 @@ function getTrackInfoFromChapters() {
 	}
 
 	const chapterName = Util.getTextFromSelectors(chapterNameSelector);
-	const artistTrack = Util.processYtVideoTitle(chapterName);
+	const artistTrack = Util.getYtVideoTitleDetails(
+		chapterName,
+		useJapaneseTitleOrder,
+	);
 	if (!artistTrack.track) {
 		artistTrack.track = chapterName;
 	}
-	return artistTrack;
+	return artistTrack.artist
+		? { ...artistTrack, artistIsCredited: true }
+		: artistTrack;
 }
 
-function getTrackInfoFromTitle(): ArtistTrackInfo {
-	let { artist, track } = Util.processYtVideoTitle(
-		Util.getTextFromSelectors(videoTitleSelector),
-	);
-	if (!artist) {
-		artist = Util.getTextFromSelectors(channelNameSelector);
+function getChannelName(requestPlayerAuthor = true) {
+	const channelName = Util.getTextFromSelectors(channelNameSelector)?.trim();
+	if (channelName) {
+		return channelName;
 	}
 
-	return { artist, track };
+	const videoId = getVideoId();
+	if (!videoId) {
+		return null;
+	}
+
+	const watchMetadata = document.querySelector('ytd-watch-metadata');
+	if (watchMetadata?.getAttribute('video-id') === videoId) {
+		// Read a direct channel link. The enclosing byline can list multiple names.
+		const channelLink = watchMetadata.querySelector(
+			'#attributed-channel-name a:is([href^="/@"], [href^="/channel/"], [href^="/c/"], [href^="/user/"])',
+		);
+		const collaborationChannel = channelLink?.textContent?.trim();
+		if (collaborationChannel) {
+			return collaborationChannel;
+		}
+	}
+
+	if (playerAuthor?.videoId === videoId) {
+		return playerAuthor.author;
+	}
+
+	if (requestPlayerAuthor) {
+		requestPlayerAuthorFromPage();
+	}
+	return null;
+}
+
+function requestPlayerAuthorFromPage() {
+	Connector.injectScript('connectors/youtube-dom-inject.js');
+	document.dispatchEvent(new Event('web-scrobbler-request-youtube-author'));
+}
+
+/**
+ * Get the channel name, stripped of the decorations channels commonly append
+ * to it, e.g. `鏑木ろこ / Kaburaki Roco【にじさんじ】` -> `鏑木ろこ` and
+ * `日南めいHinami Mei` -> `日南めい`.
+ *
+ * @param channelName - Display name of the publishing channel
+ * @returns Artist name with channel decorations removed
+ */
+function cleanChannelArtist(channelName: string) {
+	let cleanedName = channelName
+		// Agency/group tags, e.g. `【にじさんじ】`
+		.replace(/[【［(][^】］)]*[】］)]/g, '')
+		// Bilingual channel branding, e.g. `Watakan Ch. 綿菓子かんろ`.
+		.replace(
+			/^[A-Za-z][A-Za-z0-9 '&’._-]*\s+(?:Ch\.?|Channel)\s+(?=[぀-ヿ一-鿿])/i,
+			'',
+		)
+		/*
+		 * A romanized duplicate of the name, e.g. `/ DENSHINBASHIRA-CHAN`.
+		 * Surrounding whitespace is required so names that contain a slash of
+		 * their own, such as `AC/DC`, are left alone.
+		 */
+		.split(/\s+[/／]\s+/)[0]
+		.trim();
+
+	/*
+	 * A romanized duplicate may follow a dash (`惑世いと - wakuse ito`)
+	 * or run straight onto the name (`日南めいHinami Mei`).
+	 */
+	const romanizedTail =
+		/^(.*[぀-ヿ一-鿿])(?:\s+-\s+|\s*)[A-Za-z][A-Za-z0-9\s'’.&-]*$/.exec(
+			cleanedName,
+		);
+	if (romanizedTail) {
+		cleanedName = romanizedTail[1].trim();
+	}
+
+	return cleanedName || channelName;
+}
+
+function getTrackInfoFromTitle(): YouTubeTrackInfo {
+	const title = Util.getTextFromSelectors(videoTitleSelector);
+	const channelName = title ? getChannelName(false) : null;
+	const info = Util.getYtVideoTitleDetails(
+		title,
+		useJapaneseTitleOrder,
+		channelName ? cleanChannelArtist(channelName) : null,
+	);
+	if (info.artist) {
+		return info;
+	}
+
+	const fallbackChannel = channelName ?? getChannelName();
+	return {
+		artist:
+			fallbackChannel && useJapaneseTitleOrder
+				? cleanChannelArtist(fallbackChannel)
+				: fallbackChannel,
+		track: info.track,
+	};
+}
+
+function filterYouTubeTrack(track: string) {
+	if (!track.includes('（')) {
+		return MetadataFilter.youtube(track);
+	}
+
+	// Protect Japanese text that belongs to the song title from the generic bracket cleanup.
+	const titleParts: string[] = [];
+	let marker = '\uE000';
+	while (track.includes(marker)) {
+		marker += '\uE000';
+	}
+	const protectedTrack = track.replace(
+		/（([^（）]+)）/g,
+		(group, content: string) => {
+			if (
+				!/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u.test(
+					content,
+				) ||
+				/^(?:公式.*|歌ってみた|唄ってみた|うたってみた|弾いてみた|カバー)$/u.test(
+					content.trim(),
+				)
+			) {
+				return group;
+			}
+			const index = titleParts.push(group) - 1;
+			return `${marker}${index}${marker}`;
+		},
+	);
+	return MetadataFilter.youtube(protectedTrack).replace(
+		new RegExp(`${marker}(\\d+)${marker}`, 'g'),
+		(_, index: string) => titleParts[Number(index)],
+	);
 }
 
 function removeLtrRtlChars(text: string) {

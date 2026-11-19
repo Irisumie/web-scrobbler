@@ -7,11 +7,12 @@ import type { ConnectorMeta } from '@/core/connectors';
 import type { ScrobblerSongInfo } from '@/core/scrobbler/base-scrobbler';
 import { sendContentMessage } from '@/util/communication';
 
-const INFO_TO_COPY: ['duration', 'artist', 'track'] = [
-	'duration',
-	'artist',
-	'track',
-];
+/*
+ * `artist` is deliberately absent: the scrobbler returns its own canonical
+ * spelling of an artist, which for non-Latin names is usually a romanized or
+ * English alias (`ど～ぱみん` -> `Dopam!ne`). The parsed name is kept instead.
+ */
+const INFO_TO_COPY: ['duration', 'track'] = ['duration', 'track'];
 const METADATA_TO_COPY: [
 	'trackArtUrl',
 	'artistUrl',

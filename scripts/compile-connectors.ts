@@ -45,6 +45,30 @@ function generateConnectors() {
 }
 
 /**
+ * Tail of the connector build queue.
+ *
+ * {@link generateConnectors} moves `build/connectorraw` into place and then
+ * deletes it, so two overlapping runs make the second one fail on a directory
+ * the first already moved. Watch mode fires one run per file change, so a
+ * couple of quick edits in a row is enough to trigger it - the runs are queued
+ * rather than started concurrently.
+ */
+let connectorBuildQueue: Promise<void> = Promise.resolve();
+
+/**
+ * Queue a connector build behind any already in flight.
+ *
+ * @returns A promise that resolves when this build is done
+ */
+function queueGenerateConnectors(): Promise<void> {
+	connectorBuildQueue = connectorBuildQueue
+		// A failed build must not wedge every later one.
+		.catch(() => undefined)
+		.then(() => generateConnectors());
+	return connectorBuildQueue;
+}
+
+/**
  * chokidar watcher used for HMR purposes
  */
 const watcher: FSWatcher | null = null;
@@ -60,7 +84,7 @@ export default function compileConnectors(options: {
 	return {
 		name: 'compile-connectors',
 		buildStart: async () => {
-			await generateConnectors();
+			await queueGenerateConnectors();
 			if (!options.isDev) {
 				return;
 			}
@@ -74,15 +98,15 @@ export default function compileConnectors(options: {
 
 			watcher.on('add', () => {
 				colorLog('Connector addition detected, rebuilding...', 'info');
-				generateConnectors();
+				void queueGenerateConnectors();
 			});
 			watcher.on('change', () => {
 				colorLog('Connector change detected, rebuilding...', 'info');
-				generateConnectors();
+				void queueGenerateConnectors();
 			});
 			watcher.on('unlink', () => {
 				colorLog('Connector deletion detected, rebuilding...', 'info');
-				generateConnectors();
+				void queueGenerateConnectors();
 			});
 			watcher.on('error', (err) => {
 				colorLog(err, 'error');

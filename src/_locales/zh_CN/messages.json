@@ -159,6 +159,14 @@
         "message": "忽略不属于娱乐分类的视频",
         "description": "Option title"
     },
+    "optionYtJapaneseTitleOrder": {
+        "message": "按“曲名 / 歌手”顺序解析标题",
+        "description": "Option label"
+    },
+    "optionYtJapaneseTitleOrderTitle": {
+        "message": "对于“曲名 / 歌い手”写法的标题以及翻唱视频，取分隔符之前的部分作为曲名，并使用频道名作为艺术家。“Artist - Track”写法的标题不受影响。",
+        "description": "Option title"
+    },
     "optionYtGetTrackInfoFromYtMusic": {
         "message": "使用 Youtube Music 获取曲目信息",
         "description": "Option label"
@@ -331,6 +339,15 @@
         "message": "Edits",
         "description": "'Edits' section"
     },
+    "optionsYouTubeChannelArtists": {
+        "message": "YouTube 频道默认艺人"
+    },
+    "optionsYouTubeChannelArtistsDesc": {
+        "message": "要设置或修改默认艺人，请编辑该频道的一条视频并勾选「记住此频道的艺人」。"
+    },
+    "optionsChannelArtistRemoveFailed": {
+        "message": "未能删除此频道的默认艺人。"
+    },
     "optionsEditedTracks": {
         "message": "已编辑曲目",
         "description": "'Edited tracks' header"
@@ -354,6 +371,42 @@
     "optionsRegexEditsPopupTitle": {
         "message": "$1 regex/bulk edits",
         "description": "'Regex/Bulk edits' header"
+    },
+    "optionsRegexEditsAdd": {
+        "message": "新增规则",
+        "description": "Label of button that adds a regex edit"
+    },
+    "optionsRegexEditsEditRule": {
+        "message": "编辑规则",
+        "description": "Title of button that edits a regex edit"
+    },
+    "optionsRegexEditsSaveRule": {
+        "message": "保存规则",
+        "description": "Label of button that saves a regex edit"
+    },
+    "optionsRegexEditsCancel": {
+        "message": "取消",
+        "description": "Label of button that discards regex edit changes"
+    },
+    "optionsRegexEditsMoveUp": {
+        "message": "上移",
+        "description": "Title of button that moves a regex edit up"
+    },
+    "optionsRegexEditsMoveDown": {
+        "message": "下移",
+        "description": "Title of button that moves a regex edit down"
+    },
+    "optionsRegexEditsEmpty": {
+        "message": "尚无规则。",
+        "description": "Shown when there are no regex edits"
+    },
+    "optionsRegexEditsTest": {
+        "message": "测试输入",
+        "description": "Label of regex edit test input"
+    },
+    "optionsRegexEditsPriorityNote": {
+        "message": "越靠下的规则优先级越高。",
+        "description": "Explains that regex edit order is meaningful"
     },
     "optionsBlockedTags": {
         "message": "Blocked tags",
@@ -902,6 +955,12 @@
     "infoArtistPlaceholder": {
         "message": "艺术家",
         "description": "Placeholder of artist input"
+    },
+    "infoRememberChannelArtist": {
+        "message": "记住此频道的艺人"
+    },
+    "infoChannelArtistSaveFailed": {
+        "message": "未能保存编辑或频道默认艺人。"
     },
     "infoTrackPlaceholder": {
         "message": "曲目",

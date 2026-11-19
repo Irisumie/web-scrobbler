@@ -138,6 +138,7 @@ export interface ConnectorOptions {
 		scrobbleEntertainmentOnly: boolean;
 		scrobbleMusicRecognisedOnly: boolean;
 		enableGetTrackInfoFromYtMusic: boolean;
+		japaneseTitleOrder: boolean;
 	};
 }
 
@@ -150,6 +151,7 @@ const DEFAULT_CONNECTOR_OPTIONS: ConnectorOptions = {
 		scrobbleEntertainmentOnly: false,
 		scrobbleMusicRecognisedOnly: false,
 		enableGetTrackInfoFromYtMusic: false,
+		japaneseTitleOrder: false,
 	},
 };
 

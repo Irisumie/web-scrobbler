@@ -32,6 +32,8 @@ export interface TrackInfoWithAlbum extends ArtistTrackInfo {
 }
 
 export interface BaseState extends TrackInfoWithAlbum {
+	/** The artist came from a song credit rather than a channel or title guess. */
+	artistIsCredited?: boolean | null;
 	/**
 	 * URL to track art image.
 	 */

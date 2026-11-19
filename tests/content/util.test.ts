@@ -671,6 +671,134 @@ const PROCESS_YT_VIDEO_TITLE_DATA = [
 		args: ['Artist - Track(feat.Artist2)［Music Video］'],
 		expected: { artist: 'Artist', track: 'Track(feat.Artist2)' },
 	},
+	/*
+	 * Japanese "曲名 / 歌い手" titles, only parsed as such when the connector
+	 * option is on. The artist is left empty on purpose so the connector falls
+	 * back to the channel name. Each case is taken from a real video,
+	 * referenced by its ID.
+	 */
+	{
+		description:
+			'should take the track from before a fullwidth slash (aorBqvC7F9E)',
+		args: ['衛星／音街ウナ', true],
+		expected: { artist: null, track: '衛星' },
+	},
+	{
+		description: 'should take the track from before a slash (BdBPrL7APFw)',
+		args: ['このゆびとまれ / LonePi　歌ってみた　yukino', true],
+		expected: { artist: null, track: 'このゆびとまれ' },
+	},
+	{
+		description:
+			'should take the track from before a slash, dropping a cover marker (JcDm0pNQrI8)',
+		args: ['circus / 鏑木ろこ cover', true],
+		expected: { artist: null, track: 'circus' },
+	},
+	{
+		description:
+			'should reverse a dash-separated title marked as "covered by" (Wnt9eG97PGY)',
+		args: ['Honey♡Come!! - 小倉唯 // covered by 電信柱ちゃん', true],
+		expected: { artist: null, track: 'Honey♡Come!!' },
+	},
+	{
+		description:
+			'should reverse a dash-separated title marked as "(Cover)" (ZSDbjx_lhKY)',
+		args: ["Runnin' - BIM feat. kZm, SIRUP (Cover) / KMNZ LITA", true],
+		expected: { artist: null, track: "Runnin'" },
+	},
+	{
+		description:
+			'should keep prioritizing 「」 over the separator split (ya4cIPoRaFs)',
+		args: ['ど～ぱみん -「アポカリゴットタレント」feat.初音ミク', true],
+		expected: { artist: 'ど～ぱみん ', track: 'アポカリゴットタレント' },
+	},
+	{
+		description:
+			'should not reverse a dash-separated title without a cover marker',
+		args: ['YOASOBI - アイドル', true],
+		expected: { artist: 'YOASOBI', track: 'アイドル' },
+	},
+	{
+		description:
+			'should not treat "cover" inside a longer word as a cover marker',
+		args: ['Artist - Undercover', true],
+		expected: { artist: 'Artist', track: 'Undercover' },
+	},
+	{
+		description:
+			'should keep prioritizing "(cover by ...)" over the separator split',
+		args: ['Original Artist - Track (covered by Artist)', true],
+		expected: { artist: 'Artist', track: 'Track' },
+	},
+	{
+		description:
+			'should prefer the leftmost split point over a hyphen inside a name (6ObvFPLk8eI)',
+		args: ['ワンダー / r-906 feat. 初音ミク', true],
+		expected: { artist: null, track: 'ワンダー' },
+	},
+	{
+		description:
+			'should prefer a leading slash over a later dash (e62G32X6pvY)',
+		args: ['ももいろの鍵 / いよわ (cover) - ver.日南めい', true],
+		expected: { artist: null, track: 'ももいろの鍵' },
+	},
+	{
+		description:
+			'should ignore a separator inside a bracketed tag group (Q2tkPP5H_s)',
+		args: ['【歌ってみた】ラヴィ(Lavie)【健屋花那/にじさんじ】', true],
+		expected: { artist: null, track: 'ラヴィ' },
+	},
+	{
+		description:
+			'should split at a cover marker when there is no separator (B7OPlsdBuVc)',
+		args: ['きみも悪い人でよかった covered by 卯月コウ 魔界ノりりむ', true],
+		expected: { artist: null, track: 'きみも悪い人でよかった' },
+	},
+	{
+		description:
+			'should drop a romanized duplicate after a slash (DsWPLErOpEI)',
+		args: ['イマニシ - 合わない / imanishi - Awanai', true],
+		expected: { artist: 'イマニシ', track: '合わない' },
+	},
+	{
+		description: 'should not split a name containing an unspaced slash',
+		args: ['AC/DC - Thunderstruck', true],
+		expected: { artist: 'AC/DC', track: 'Thunderstruck' },
+	},
+	{
+		description: 'should not drop a "(feat. ...)" credit as a romanization',
+		args: ['ヨルシカ - 花に亡霊 (feat. suis)', true],
+		expected: { artist: 'ヨルシカ', track: '花に亡霊 (feat. suis)' },
+	},
+	{
+		description: 'should not drop a parenthesized part of a Latin title',
+		args: ['Artist - Track (Extended Mix)', true],
+		expected: { artist: 'Artist', track: 'Track (Extended Mix)' },
+	},
+	/*
+	 * The same titles with the option off must parse exactly as they did
+	 * before the option existed.
+	 */
+	{
+		description:
+			'should leave a fullwidth slash title alone when the option is off',
+		args: ['衛星／音街ウナ'],
+		expected: { artist: null, track: '衛星／音街ウナ' },
+	},
+	{
+		description: 'should split a slash title as artist/track when off',
+		args: ['circus / 鏑木ろこ cover'],
+		expected: { artist: 'circus ', track: ' 鏑木ろこ cover' },
+	},
+	{
+		description:
+			'should split a cover-marked title as artist/track when off',
+		args: ['Honey♡Come!! - 小倉唯 // covered by 電信柱ちゃん'],
+		expected: {
+			artist: 'Honey♡Come!!',
+			track: '小倉唯 // covered by 電信柱ちゃん',
+		},
+	},
 ];
 
 /**

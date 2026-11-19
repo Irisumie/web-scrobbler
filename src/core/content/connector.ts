@@ -158,6 +158,13 @@ export default class BaseConnector {
 	 */
 	public getChannelId: (() => string | null | undefined) | null = null;
 
+	/** Resolve the verified publishing channel for a particular song. */
+	public getArtistChannel:
+		| ((
+				originUrl: string | null | undefined,
+		  ) => Promise<Util.ChannelInfo | null>)
+		| null = null;
+
 	/**
 	 * Selector of an element containing channel label.
 	 *
@@ -646,6 +653,7 @@ export default class BaseConnector {
 	private defaultState: State = {
 		track: null,
 		artist: null,
+		artistIsCredited: null,
 		album: null,
 		albumArtist: null,
 		uniqueID: null,

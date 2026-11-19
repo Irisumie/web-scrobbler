@@ -1,11 +1,15 @@
 import { t } from '@/util/i18n';
 import type { Setter } from 'solid-js';
-import { For, Show, createMemo, createResource } from 'solid-js';
+import { For, Show, createResource, createSignal } from 'solid-js';
 import * as BrowserStorage from '@/core/storage/browser-storage';
+import regexEdits from '@/core/storage/regex-edits';
 import styles from '../components.module.scss';
 import {
+	AddOutlined,
 	CaseSensitiveOutlined,
 	DeleteOutlined,
+	EditOutlined,
+	ExpandMoreOutlined,
 	RegexOutlined,
 	WholeWordOutlined,
 } from '@/ui/components/icons';
@@ -13,8 +17,12 @@ import type { FieldType, RegexEdit } from '@/util/regex';
 import { pascalCaseField } from '@/util/regex';
 import { ExportEdits, ImportEdits, ViewEdits } from './util';
 import type { ModalType } from '../modal-type';
+import RegexEditForm, { emptyRegexEdit } from './regex-edit-form';
 
-const regexEdits = BrowserStorage.getStorage(BrowserStorage.REGEX_EDITS);
+const regexEditsStorage = BrowserStorage.getStorage(BrowserStorage.REGEX_EDITS);
+
+/** Index used to mark the "new rule" draft rather than an existing rule. */
+const NEW_EDIT = -1;
 
 /**
  * Component that allows the user to see, import, and export track metadata edits.
@@ -38,21 +46,46 @@ export default function RegexEdits(props: {
 					type={'regexEdits'}
 				/>
 				<ExportEdits
-					editWrapper={regexEdits}
+					editWrapper={regexEditsStorage}
 					filename="regex-edits.json"
 				/>
-				<ImportEdits editWrapper={regexEdits} />
+				<ImportEdits editWrapper={regexEditsStorage} />
 			</div>
 		</>
 	);
 }
 
 /**
- * Component that shows all the currently registered track edits and allows the user to delete them.
+ * Manager for the user's regex edits: add, edit, reorder and delete.
  * To be displayed in a modal.
  */
 export function RegexEditsModal() {
-	const [edits, { mutate }] = createResource(regexEdits.get.bind(regexEdits));
+	const [edits, { refetch }] = createResource(
+		regexEditsStorage.get.bind(regexEditsStorage),
+	);
+	const [editingIndex, setEditingIndex] = createSignal<number | null>(null);
+
+	const closeForm = () => setEditingIndex(null);
+
+	const saveEdit = (index: number, edit: RegexEdit) => {
+		void (async () => {
+			if (index === NEW_EDIT) {
+				await regexEdits.saveRegexEdit(edit);
+			} else {
+				await regexEdits.updateRegexEdit(index, edit);
+			}
+			closeForm();
+			void refetch();
+		})();
+	};
+
+	const runAndRefetch = (action: Promise<void>) => {
+		void action.then(() => {
+			closeForm();
+			void refetch();
+		});
+	};
+
 	return (
 		<>
 			<h1>
@@ -61,10 +94,69 @@ export function RegexEditsModal() {
 					(edits() ?? []).length.toString(),
 				)}
 			</h1>
+			<div class={styles.buttonContainer}>
+				<button
+					class={`${styles.button} ${styles.shiftLeft}`}
+					onClick={() => setEditingIndex(NEW_EDIT)}
+				>
+					<AddOutlined />
+					{t('optionsRegexEditsAdd')}
+				</button>
+			</div>
+			<Show when={editingIndex() === NEW_EDIT}>
+				<RegexEditForm
+					initialEdit={emptyRegexEdit()}
+					onSave={(edit) => saveEdit(NEW_EDIT, edit)}
+					onCancel={closeForm}
+				/>
+			</Show>
+			<Show
+				when={(edits() ?? []).length > 0}
+				fallback={
+					<p class={styles.muted}>{t('optionsRegexEditsEmpty')}</p>
+				}
+			>
+				<p class={styles.muted}>{t('optionsRegexEditsPriorityNote')}</p>
+			</Show>
 			<ul class={styles.optionList}>
 				<For each={[...(edits() ?? []).entries()]}>
 					{([index, edit]) => (
-						<EditInfo index={index} edit={edit} mutate={mutate} />
+						<li>
+							<Show
+								when={editingIndex() === index}
+								fallback={
+									<EditInfo
+										index={index}
+										edit={edit}
+										total={(edits() ?? []).length}
+										onEdit={() => setEditingIndex(index)}
+										onDelete={() =>
+											runAndRefetch(
+												regexEdits.deleteRegexEdit(
+													index,
+												),
+											)
+										}
+										onMove={(to) =>
+											runAndRefetch(
+												regexEdits.moveRegexEdit(
+													index,
+													to,
+												),
+											)
+										}
+									/>
+								}
+							>
+								<RegexEditForm
+									initialEdit={edit}
+									onSave={(newEdit) =>
+										saveEdit(index, newEdit)
+									}
+									onCancel={closeForm}
+								/>
+							</Show>
+						</li>
 					)}
 				</For>
 			</ul>
@@ -73,37 +165,62 @@ export function RegexEditsModal() {
 }
 
 /**
- * Component that shows a single regex edit and allows the user to delete it.
+ * Component that shows a single regex edit along with its row actions.
  */
 function EditInfo(props: {
 	index: number;
 	edit: RegexEdit;
-	mutate: Setter<RegexEdit[] | null | undefined>;
+	total: number;
+	onEdit: () => void;
+	onDelete: () => void;
+	onMove: (to: number) => void;
 }) {
-	const label = createMemo(
-		() =>
-			`${props.edit.search.track} → ${props.edit.replace.track};${props.edit.search.artist} → ${props.edit.replace.artist};${props.edit.search.album} → ${props.edit.replace.album};${props.edit.search.albumArtist} → ${props.edit.replace.albumArtist}`,
-	);
 	return (
-		<li class={styles.deleteListing}>
-			<button
-				class={`${styles.button} ${styles.small} ${styles.marginRight}`}
-				onClick={(event) => {
-					event.stopPropagation();
-					const index = props.index;
-					props.mutate((e) => {
-						if (!e) {
-							return e;
-						}
-						const o = e.filter((_, i) => i !== index);
-						regexEdits.set(o);
-						return o;
-					});
-				}}
-				title={label()}
-			>
-				<DeleteOutlined />
-			</button>
+		<div class={styles.deleteListing}>
+			<div class={styles.regexRowButtons}>
+				<button
+					class={`${styles.button} ${styles.small}`}
+					title={t('optionsRegexEditsEditRule')}
+					onClick={(event) => {
+						event.stopPropagation();
+						props.onEdit();
+					}}
+				>
+					<EditOutlined />
+				</button>
+				<button
+					class={`${styles.button} ${styles.small}`}
+					title={t('optionsRegexEditsMoveUp')}
+					disabled={props.index === 0}
+					onClick={(event) => {
+						event.stopPropagation();
+						props.onMove(props.index - 1);
+					}}
+				>
+					<ExpandMoreOutlined class={styles.regexArrowUp} />
+				</button>
+				<button
+					class={`${styles.button} ${styles.small}`}
+					title={t('optionsRegexEditsMoveDown')}
+					disabled={props.index === props.total - 1}
+					onClick={(event) => {
+						event.stopPropagation();
+						props.onMove(props.index + 1);
+					}}
+				>
+					<ExpandMoreOutlined />
+				</button>
+				<button
+					class={`${styles.button} ${styles.small}`}
+					title={t('infoDeleteLabel')}
+					onClick={(event) => {
+						event.stopPropagation();
+						props.onDelete();
+					}}
+				>
+					<DeleteOutlined />
+				</button>
+			</div>
 			<div class={styles.regexDeleteContent}>
 				<span class={styles.regexDeleteSearchLabel}>
 					{t('infoSearchLabel')}
@@ -117,7 +234,7 @@ function EditInfo(props: {
 				<Entry edit={props.edit} type={'albumArtist'} />
 				<Flags edit={props.edit} />
 			</div>
-		</li>
+		</div>
 	);
 }
 
